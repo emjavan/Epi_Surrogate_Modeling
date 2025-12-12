@@ -1,7 +1,8 @@
 #///////////////////////////////////////////////////////////////
-#'
-#'
-#'
+#' Create the input files for varying the initial infected param
+#'  in a single county
+#' Running 100 simulations for 212 days because 500 days takes 
+#'  too long for larger states and isn't adding much
 #///////////////////////////////////////////////////////////////
 
 #///////////////////////
@@ -12,7 +13,7 @@ source("../data/private_input_data/api_keys.R")
 
 commands_dir = "../Surrogate_Sims/"
 dir.create(commands_dir)
-simulation_days = 500
+simulation_days = 212
 
 #/////////////////////////
 #### Helper Functions ####
