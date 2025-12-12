@@ -2,7 +2,7 @@
   "output_dir_path": "Maryland_InitInf-5_SingleCounty",
   "realization_range": [
     "0",
-    "999"
+    "99"
   ],
   "batch_num": "0",
   "data": {

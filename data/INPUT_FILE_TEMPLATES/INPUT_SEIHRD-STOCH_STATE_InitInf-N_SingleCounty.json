@@ -1,6 +1,6 @@
 {
   "output_dir_path": "STATE_InitInf-N_SingleCounty.json",
-  "realization_range": ["0", "999"],
+  "realization_range": ["0", "99"],
   "batch_num": "0",
   "data": {
     "population": "../data/STATE/county_pop_by_age_STATE_2019-2023ACS.csv",
