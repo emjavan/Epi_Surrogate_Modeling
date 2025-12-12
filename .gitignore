@@ -47,3 +47,10 @@ po/*~
 
 # RStudio Connect folder
 rsconnect/
+
+
+
+# Api keys
+data/private_input_data/
+
+
