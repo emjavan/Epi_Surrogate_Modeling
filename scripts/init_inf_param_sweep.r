@@ -134,8 +134,12 @@ for(i in 1:nrow(top_county_expanded)){
   state_template = replace_STATE_tokens(state_template_copy, state_dir = single_state$state_name)
   
   # replace N with the actual init inf
-  state_template$output_dir_path = str_replace(state_template$output_dir_path,
-    "(?<=InitInf-)N", as.character(single_state$init_inf_series)) 
+  replace_N = str_replace(state_template$output_dir_path,
+                          "(?<=InitInf-)N", as.character(single_state$init_inf_series)) 
+  remove_json = str_remove(replace_N, "\\.json")
+  
+  
+  state_template$output_dir_path = remove_json
   state_template$initial_infected[[1]]$county   = single_state$geoid_o
   state_template$initial_infected[[1]]$infected = as.character(single_state$init_inf_series)
   
@@ -161,8 +165,4 @@ commands_script = top_county_expanded %>%
 write.table(commands_script,
             paste0(commands_dir, "state_commands.txt"),
             sep = "", col.names = FALSE,  row.names = FALSE, quote = FALSE)
-
-
-
-# fix that the total init inf isn't in the file names so only one thing is getting written
 
