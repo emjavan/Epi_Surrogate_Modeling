@@ -9,53 +9,13 @@
 #### Load libraries ####
 library(tidyverse)
 library(jsonlite)
+library(digest)
 source("../data/private_input_data/api_keys.R")
+source("helper_funs.R")
 
-commands_dir = "../Surrogate_Sims/"
+commands_dir = "../SEIHRD-STOCH_Param_Sweep/"
 dir.create(commands_dir)
-simulation_days = 212
-
-#/////////////////////////
-#### Helper Functions ####
-# Replace "STATE" tokens in all strings from template
-replace_STATE_tokens = function(x, state_dir) {
-  # match STATE when not next to letters/digits (underscore is ok)
-  pat = "(?<![A-Za-z0-9])STATE(?![A-Za-z0-9])"
-  if (is.character(x)) {
-    stringr::str_replace_all(x, pat, state_dir)
-  } else if (is.list(x)) {
-    lapply(x, replace_STATE_tokens, state_dir = state_dir)
-  } else x
-} # end replace_STATE_tokens
-
-# Create sequence of initial infected for a single county based on init_inf_per_1M
-make_init_series = function(init_inf_per_1M, total_vals = 10) { # init_inf_per_1M = 40
-  # Small values: just use 1:total_vals
-  if(init_inf_per_1M <= total_vals){return(1:total_vals)}
-  
-  # Initial set: 1, all multiples of 5, and init_inf_per_1M itself
-  max_val = ceiling(init_inf_per_1M / 5) * 5 # Round up init to nearest multiple of 5
-  vals = sort(unique(c(1, seq(5, max_val, by = 5), init_inf_per_1M)))
-  
-  if(length(vals) == total_vals){ # If we already have 10, we're done
-    return(vals)
-  }else if(length(vals) < total_vals){ # If we have fewer than 10, add neighbors, prioritizing those closest to init
-    needed = total_vals - length(vals)
-    
-    # Candidates are all integers between 1 and max_val that aren't already in vals
-    candidates = setdiff(1:max_val, vals)
-    
-    # Prioritize candidates by distance to init (closest first, then by value)
-    candidates = candidates[order(abs(candidates - init_inf_per_1M), candidates)]
-    extras = head(candidates, needed)
-    more_vals = sort(c(vals, extras))
-    return(more_vals)
-  }else{ # If more than total_vals, thin them out to total_vals while keeping the range.
-    idx = round(seq(1, length(vals), length.out = total_vals))
-    less_vals = sort(vals[idx])
-    return(less_vals)
-  } # end if to get total_vals requested in final param sweep
-} # end make_init_series
+simulation_days = 500
 
 #/////////////////////////
 #### Load data ####
@@ -101,13 +61,13 @@ top_county = map_dfr(
     state_abbr = "DC",
     geoid_o = "11001",
     prop_county_outflow = 0,
+    total_counties_connected = 0,
     total_pop_outflow = 0)) %>%
   left_join(acs_state_pop_2023, by="state_fips") %>%
   rowwise() %>%
   mutate(#frac_tot_pop_outflow = total_pop_outflow/STATE_POP_ACS2023,
          init_inf_per_1M = ceiling(STATE_POP_ACS2023/1000000) ) %>%
   ungroup()
-  
   
 # Get every unique param combination
 top_county_expanded = top_county %>%
@@ -122,6 +82,15 @@ top_county_expanded = top_county %>%
     BASE_FILENAME_ONLY = str_replace(BASE_FILENAME_ONLY, "(?<=InitInf-)N", as.character(init_inf_series)), 
     BASE_OUTPUT_FILE_PATH = paste0("../data/", state_name, "/", "SingleCounty_InputJSONs", "/", BASE_FILENAME_ONLY)
   )
+
+# Pick states in the desired range of sizes by county
+state_df = pick_distributed_states(
+  top_county,
+  value_col = "total_counties_connected",
+  name_col  = "state_name",
+  n         = 5,
+  max_value = 100
+)
 
 #////////////////////////////////////
 #### Create simulation templates ####
