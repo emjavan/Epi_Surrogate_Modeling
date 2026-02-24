@@ -53,4 +53,12 @@ rsconnect/
 # Api keys
 data/private_input_data/
 
+# Parameter sweep output files
+SEIR-STOCH_Param_Sweep/input_files/
+
+# Python bytecode
+__pycache__/
+*.pyc
+*.pyo
+
 
