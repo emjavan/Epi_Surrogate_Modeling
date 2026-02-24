@@ -55,6 +55,7 @@ data/private_input_data/
 
 # Parameter sweep output files
 SEIR-STOCH_Param_Sweep/input_files/
+SEIHRD-STOCH_Param_Sweep/Surrogate_Sims/
 
 # Python bytecode
 __pycache__/
