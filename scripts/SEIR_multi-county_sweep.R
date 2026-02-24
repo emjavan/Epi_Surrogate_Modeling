@@ -99,8 +99,9 @@ base_template = jsonlite::fromJSON(base_file, simplifyVector = FALSE)
 
 # Create dir for all initial condition files
 commands_dir = "../SEIR-STOCH_Param_Sweep/"
-output_dir = paste0(commands_dir, "input_files/")
-dir.create(output_dir, recursive = TRUE)
+input_scenario_dir = "input_files/"
+input_scenario_dir_path = paste0(commands_dir, input_scenario_dir)
+dir.create(input_scenario_dir_path, recursive = TRUE)
 
 # Build one template per (county set x init_inf x R0) combo, 
 # with initial_infected the same infected value for all in set
@@ -113,9 +114,7 @@ scenario_results = pmap(sweep_combos, function(state_name, county_set, init_inf,
         county    = county,
         infected  = as.character(init_inf),
         age_group = "2"
-      )
-    }
-  )
+      )})
   # Set R0 in disease model
   tmpl$disease_model$parameters$R0 <- as.character(R0)
   # Replace STATE tokens first, then hash, then insert hash into output_dir_path
@@ -125,7 +124,7 @@ scenario_results = pmap(sweep_combos, function(state_name, county_set, init_inf,
   uuid <- RcppUUID::uuid_generate_time()
   tmpl$batch_num <- uuid
   
-  jsonlite::write_json(tmpl, paste0(output_dir, state_name, "_", hash, ".json"), 
+  jsonlite::write_json(tmpl, paste0(input_scenario_dir, state_name, "_", hash, ".json"), 
                        auto_unbox = TRUE, pretty = TRUE, null = "null")
   
   return(list(template = tmpl, hash = hash, uuid = uuid))
@@ -136,8 +135,9 @@ scenario_templates = map(scenario_results, "template")
 sweep_combos$scenario_hash = map_chr(scenario_results, "hash")
 sweep_combos$batch_num     = map_chr(scenario_results, "uuid")
 sweep_combos_final = sweep_combos %>%
-  mutate(output_path = paste0(output_dir, state_name, "_", scenario_hash) )
+  mutate(output_path = paste0(input_scenario_dir, state_name, "_", scenario_hash, ".json") )
 
+# Save metadata of each scenario hash, etc.
 sweep_combos_final %>%
   mutate(county_set = map_chr(county_set, paste, collapse = ",")) %>%
   write.table(paste0(commands_dir, "scenario_metadata.txt"),
