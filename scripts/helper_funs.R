@@ -87,10 +87,148 @@ compute_scenario_hash <- function(input_list) {
 }
 
 
+#///////////////////////////////////////////////////////////////////////////////
+# Turn a state's vaccine schedule into the vaccine_stockpile JSON list
+make_stockpile_json = function(state_df) {
+  state_df %>%
+    arrange(ReleaseDay) %>%
+    transmute(
+      day    = as.character(ReleaseDay),
+      amount = as.character(round(TotalWeeklyNewFullProtect))
+    ) %>%
+    transpose()
+} # end make_stockpile_json
 
 
+#///////////////////////////////////////////////////////////////////////////////
+# Parse STATE / SCENARIO / batch from path and read network CSV
+read_network = function(path,
+                        pattern = ".*/US_States/([^/_]+)_([^/]+)/network_batch-([0-9]+)\\.csv$") {
+  m = str_match(path, pattern)
+  network_df = read_csv(path, show_col_types = FALSE) %>%
+    mutate(
+      STATE_NAME = m[2],
+      SCENARIO   = m[3],
+      batch_num  = as.integer(m[4]),
+      .before = 1
+    )
+  return(network_df)
+} # end read_network
 
 
+#///////////////////////////////////////////////////////////////////////////////
+# Summarize one network file: per sim_id x compartment min/max value + day
+summarise_one_network_file = function(path,
+                                      comp_cols = c("S","E","IA","IP","IS","H","R","D","cum_hosp")) {
+  df = read_network(path) %>%
+    group_by(batch_num, STATE_NAME, SCENARIO, sim_id) %>%
+    arrange(batch_num, STATE_NAME, SCENARIO, sim_id, day) %>%
+    mutate(
+      new_hosp = pmax(H - dplyr::lag(H, default = 0), 0),
+      cum_hosp = cumsum(new_hosp)
+    ) %>%
+    ungroup() %>%
+    group_by(STATE_NAME, SCENARIO, sim_id) %>%
+    complete(day = full_seq(range(day), 1)) %>%
+    fill(H, cum_hosp, new_hosp, .direction = "down") %>%
+    replace_na(list(H = 0, cum_hosp = 0, new_hosp = 0)) %>%
+    ungroup()
+
+  df %>%
+    arrange(STATE_NAME, SCENARIO, sim_id, day) %>%
+    group_by(STATE_NAME, SCENARIO, batch_num, sim_id) %>%
+    pivot_longer(all_of(comp_cols), names_to = "comp", values_to = "val") %>%
+    ungroup() %>%
+    group_by(STATE_NAME, SCENARIO, batch_num, sim_id, comp) %>%
+    summarise(
+      max_value = if (all(is.na(val))) NA_real_ else max(val, na.rm = TRUE),
+      max_day   = if (all(is.na(val))) NA_integer_ else day[which.max(replace_na(val, -Inf))],
+      min_value = if (all(is.na(val))) NA_real_ else min(val, na.rm = TRUE),
+      min_day   = if (all(is.na(val))) NA_integer_ else day[which.min(replace_na(val,  Inf))],
+      .groups = "drop_last"
+    ) %>%
+    ungroup() %>%
+    pivot_wider(
+      id_cols    = c(STATE_NAME, SCENARIO, batch_num, sim_id),
+      names_from = comp,
+      values_from = c(max_value, max_day, min_value, min_day),
+      names_glue = "{comp}_{.value}"
+    )
+} # end summarise_one_network_file
 
 
+#///////////////////////////////////////////////////////////////////////////////
+# Read timing stats from a CSV and return summary tibble
+read_time_stats = function(csv_path) {
+  df = readr::read_csv(csv_path, show_col_types = FALSE)
+  x  = df[["time_seconds"]]
+  tibble(
+    file       = csv_path,
+    n          = length(x),
+    mean_sec   = mean(x),
+    median_sec = median(x),
+    sd_sec     = sd(x),
+    q05_sec    = quantile(x, 0.05, names = FALSE, type = 7),
+    q25_sec    = quantile(x, 0.25, names = FALSE, type = 7),
+    q75_sec    = quantile(x, 0.75, names = FALSE, type = 7),
+    q95_sec    = quantile(x, 0.95, names = FALSE, type = 7)
+  )
+} # end read_time_stats
 
+
+#///////////////////////////////////////////////////////////////////////////////
+# Parse STATE / SCENARIO / FIPS / batch from path and read node CSV
+read_node = function(path,
+                     pattern = ".*/US_States/([^/_]+)_([^/]+)/node_([0-9]{4,5})_batch-([0-9]+)\\.csv$") {
+  m = str_match(path, pattern)
+  node_df = read_csv(path, show_col_types = FALSE) %>%
+    mutate(
+      STATE_NAME  = m[2],
+      SCENARIO    = m[3],
+      county_fips = m[4],
+      batch_num   = as.integer(m[5]),
+      .before = 1
+    )
+  return(node_df)
+} # end read_node
+
+
+#///////////////////////////////////////////////////////////////////////////////
+# Summarize one node file: per sim_id x compartment min/max value + day
+summarise_one_node_file = function(path,
+                                   comp_cols = c("S","E","IA","IP","IS","H","R","D","cum_hosp")) {
+  df = read_node(path) %>%
+    group_by(batch_num, STATE_NAME, SCENARIO, sim_id) %>%
+    arrange(batch_num, STATE_NAME, SCENARIO, sim_id, day) %>%
+    mutate(
+      new_hosp = pmax(H - dplyr::lag(H, default = 0), 0),
+      cum_hosp = cumsum(new_hosp)
+    ) %>%
+    ungroup() %>%
+    group_by(STATE_NAME, SCENARIO, sim_id) %>%
+    complete(day = full_seq(range(day), 1)) %>%
+    fill(H, cum_hosp, new_hosp, .direction = "down") %>%
+    replace_na(list(H = 0, cum_hosp = 0, new_hosp = 0)) %>%
+    ungroup()
+
+  df %>%
+    arrange(STATE_NAME, SCENARIO, sim_id, day) %>%
+    group_by(STATE_NAME, SCENARIO, county_fips, batch_num, sim_id) %>%
+    pivot_longer(all_of(comp_cols), names_to = "comp", values_to = "val") %>%
+    ungroup() %>%
+    group_by(STATE_NAME, SCENARIO, county_fips, batch_num, sim_id, comp) %>%
+    summarise(
+      max_value = if (all(is.na(val))) NA_real_ else max(val, na.rm = TRUE),
+      max_day   = if (all(is.na(val))) NA_integer_ else day[which.max(replace_na(val, -Inf))],
+      min_value = if (all(is.na(val))) NA_real_ else min(val, na.rm = TRUE),
+      min_day   = if (all(is.na(val))) NA_integer_ else day[which.min(replace_na(val,  Inf))],
+      .groups = "drop_last"
+    ) %>%
+    ungroup() %>%
+    pivot_wider(
+      id_cols    = c(STATE_NAME, SCENARIO, county_fips, batch_num, sim_id),
+      names_from = comp,
+      values_from = c(max_value, max_day, min_value, min_day),
+      names_glue = "{comp}_{.value}"
+    )
+} # end summarise_one_node_file
