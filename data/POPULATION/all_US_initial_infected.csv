@@ -1,0 +1,52 @@
+STATE_NAME,total_pop,total_counties,COUNTY_NAME,fips,init_inf_per_1M
+Alabama,5054253,67,Jefferson County,1073,6
+Alaska,733971,30,Anchorage Municipality,2020,1
+Arizona,7268175,15,Maricopa County,4013,8
+Arkansas,3032651,75,Pulaski County,5119,4
+California,39242785,58,Los Angeles County,6037,40
+Colorado,5810774,64,El Paso County,8041,6
+Connecticut,3598348,9,Capitol Planning Region,9110,4
+Delaware,1005872,3,New Castle County,10003,2
+District of Columbia,672079,1,District of Columbia,11001,1
+Florida,21928881,67,Miami-Dade County,12086,22
+Georgia,10822590,159,Fulton County,13121,11
+Hawaii,1445635,5,Honolulu County,15003,2
+Idaho,1893296,44,Ada County,16001,2
+Illinois,12692653,102,Cook County,17031,13
+Indiana,6811752,92,Marion County,18097,7
+Iowa,3195937,99,Polk County,19153,4
+Kansas,2937569,105,Johnson County,20091,3
+Kentucky,4510725,120,Jefferson County,21111,5
+Louisiana,4621025,64,East Baton Rouge Parish,22033,5
+Maine,1377400,16,Cumberland County,23005,2
+Maryland,6170738,24,Montgomery County,24031,7
+Massachusetts,6992395,14,Middlesex County,25017,7
+Michigan,10051595,83,Wayne County,26163,11
+Minnesota,5713716,87,Hennepin County,27053,6
+Mississippi,2951438,82,Hinds County,28049,3
+Missouri,6168181,115,St. Louis County,29189,7
+Montana,1105072,56,Yellowstone County,30111,2
+Nebraska,1965926,93,Douglas County,31055,2
+Nevada,3141000,17,Clark County,32003,4
+New Hampshire,1387834,10,Hillsborough County,33011,2
+New Jersey,9267014,21,Bergen County,34003,10
+New Mexico,2114768,33,Bernalillo County,35001,3
+New York,19872319,62,Kings County,36047,20
+North Carolina,10584340,100,Wake County,37183,11
+North Dakota,779361,53,Cass County,38017,1
+Ohio,11780046,88,Franklin County,39049,12
+Oklahoma,3995260,77,Oklahoma County,40109,4
+Oregon,4238714,36,Multnomah County,41051,5
+Pennsylvania,12986518,67,Philadelphia County,42101,13
+Rhode Island,1095371,5,Providence County,44007,2
+South Carolina,5212774,46,Greenville County,45045,6
+South Dakota,899194,66,Minnehaha County,46099,1
+Tennessee,6986082,95,Shelby County,47157,7
+Texas,29640343,254,Harris County,48201,30
+Utah,3331187,29,Salt Lake County,49035,4
+Vermont,645254,14,Chittenden County,50007,1
+Virginia,8657499,133,Fairfax County,51059,9
+Washington,7740984,39,King County,53033,8
+West Virginia,1784462,55,Kanawha County,54039,2
+Wisconsin,5892023,72,Milwaukee County,55079,6
+Wyoming,579761,23,Laramie County,56021,1
