@@ -48,8 +48,6 @@ po/*~
 # RStudio Connect folder
 rsconnect/
 
-
-
 # Api keys
 data/private_input_data/
 
@@ -58,9 +56,41 @@ SEIR-STOCH_Param_Sweep/*/
 US_Vax_Compare/*/
 SEIHRD-STOCH_Param_Sweep/Surrogate_Sims/
 
-# Python bytecode
+**/input.json
+.idea/
+OUTPUT_*/
+OUTPUT.json
+.python-version
+.pytest_cache
 __pycache__/
 *.pyc
 *.pyo
+*.swp
+*.xml
+.Rproj.user
+.vscode/
+scripts/.Rhistory
+scripts/.RData*
+scripts/.RDataTmp
 
+# Ignore all input data files to be downloaded or created by user
+data/private_input_data/
+data/POPULATION/
+data/MOBILITY/
+data/BRFSS/
+data/NSCH/
+data/RISK_RATIOS/
+data/SVI/
+data/PLACES/
+data/VACCINATION/
+figures/
 
+# ignore output files
+US_States/
+*_TEST/
+sim_data/
+metadata_master.csv
+
+# ignore code coverage related files
+.coverage
+htmlcov/
