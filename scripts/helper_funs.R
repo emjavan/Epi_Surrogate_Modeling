@@ -68,7 +68,7 @@ compute_scenario_hash <- function(input_list) {
   # Remove runtime-only fields
   hash_list$output_dir_path <- NULL
   hash_list$realization_range <- NULL
-  hash_list$batch_num <- NULL
+  hash_list$BATCH_NUM <- NULL
   
   # Canonical JSON (stable representation)
   canonical_json <- toJSON(
@@ -101,18 +101,18 @@ make_stockpile_json = function(state_df) {
 
 
 #///////////////////////////////////////////////////////////////////////////////
-# Parse STATE / SCENARIO / batch from path and read network CSV
-read_network = function(path,
-                        pattern = ".*/US_States/([^/_]+)_([^/]+)/network_batch-([0-9]+)\\.csv$") {
-  m = str_match(path, pattern)
-  network_df = read_csv(path, show_col_types = FALSE) %>%
-    mutate(
-      STATE_NAME = m[2],
-      SCENARIO   = m[3],
-      batch_num  = as.integer(m[4]),
-      .before = 1
-    )
-  return(network_df)
+# Parse STATE / SCENARIO from path and read network CSV
+read_network = function(path) {
+  scenario  = basename(dirname(path))
+  state     = basename(dirname(dirname(path)))
+  read_csv(path, show_col_types = FALSE,
+           col_types = cols(.default = col_character())) %>%
+    mutate(STATE_NAME_DIR = state, 
+           SCENARIO_HASH = scenario,
+           BATCH_NUM = tools::file_path_sans_ext(basename(path)),
+           BATCH_NUM = gsub("network_batch-", "", BATCH_NUM),
+           .before = 1) %>%
+    drop_na()
 } # end read_network
 
 
@@ -121,25 +121,25 @@ read_network = function(path,
 summarise_one_network_file = function(path,
                                       comp_cols = c("S","E","IA","IP","IS","H","R","D","cum_hosp")) {
   df = read_network(path) %>%
-    group_by(batch_num, STATE_NAME, SCENARIO, sim_id) %>%
-    arrange(batch_num, STATE_NAME, SCENARIO, sim_id, day) %>%
+    group_by(BATCH_NUM, STATE_NAME_DIR, SCENARIO_HASH, sim_id) %>%
+    arrange(BATCH_NUM, STATE_NAME_DIR, SCENARIO_HASH, sim_id, day) %>%
     mutate(
       new_hosp = pmax(H - dplyr::lag(H, default = 0), 0),
       cum_hosp = cumsum(new_hosp)
     ) %>%
     ungroup() %>%
-    group_by(STATE_NAME, SCENARIO, sim_id) %>%
+    group_by(STATE_NAME_DIR, SCENARIO_HASH, sim_id) %>%
     complete(day = full_seq(range(day), 1)) %>%
     fill(H, cum_hosp, new_hosp, .direction = "down") %>%
     replace_na(list(H = 0, cum_hosp = 0, new_hosp = 0)) %>%
     ungroup()
 
   df %>%
-    arrange(STATE_NAME, SCENARIO, sim_id, day) %>%
-    group_by(STATE_NAME, SCENARIO, batch_num, sim_id) %>%
+    arrange(STATE_NAME_DIR, SCENARIO_HASH, sim_id, day) %>%
+    group_by(STATE_NAME_DIR, SCENARIO_HASH, BATCH_NUM, sim_id) %>%
     pivot_longer(all_of(comp_cols), names_to = "comp", values_to = "val") %>%
     ungroup() %>%
-    group_by(STATE_NAME, SCENARIO, batch_num, sim_id, comp) %>%
+    group_by(STATE_NAME_DIR, SCENARIO_HASH, BATCH_NUM, sim_id, comp) %>%
     summarise(
       max_value = if (all(is.na(val))) NA_real_ else max(val, na.rm = TRUE),
       max_day   = if (all(is.na(val))) NA_integer_ else day[which.max(replace_na(val, -Inf))],
@@ -149,7 +149,7 @@ summarise_one_network_file = function(path,
     ) %>%
     ungroup() %>%
     pivot_wider(
-      id_cols    = c(STATE_NAME, SCENARIO, batch_num, sim_id),
+      id_cols    = c(STATE_NAME_DIR, SCENARIO_HASH, BATCH_NUM, sim_id),
       names_from = comp,
       values_from = c(max_value, max_day, min_value, min_day),
       names_glue = "{comp}_{.value}"
@@ -178,18 +178,19 @@ read_time_stats = function(csv_path) {
 
 #///////////////////////////////////////////////////////////////////////////////
 # Parse STATE / SCENARIO / FIPS / batch from path and read node CSV
-read_node = function(path,
-                     pattern = ".*/US_States/([^/_]+)_([^/]+)/node_([0-9]{4,5})_batch-([0-9]+)\\.csv$") {
-  m = str_match(path, pattern)
-  node_df = read_csv(path, show_col_types = FALSE) %>%
+read_node = function(path) {
+  scenario_dir  = basename(dirname(path))
+  state_dir     = basename(dirname(dirname(path)))
+  file_stem    = tools::file_path_sans_ext(basename(path))
+  read_csv(path, show_col_types = FALSE,
+           col_types = cols(.default = col_character())) %>%
     mutate(
-      STATE_NAME  = m[2],
-      SCENARIO    = m[3],
-      county_fips = m[4],
-      batch_num   = as.integer(m[5]),
+      STATE_NAME_DIR  = state_dir,
+      SCENARIO_HASH   = scenario_dir,
+      county_fips = gsub("node_|_batch-.*", "", file_stem),
+      BATCH_NUM   = gsub(".*batch-", "", file_stem),
       .before = 1
     )
-  return(node_df)
 } # end read_node
 
 
@@ -198,25 +199,27 @@ read_node = function(path,
 summarise_one_node_file = function(path,
                                    comp_cols = c("S","E","IA","IP","IS","H","R","D","cum_hosp")) {
   df = read_node(path) %>%
-    group_by(batch_num, STATE_NAME, SCENARIO, sim_id) %>%
-    arrange(batch_num, STATE_NAME, SCENARIO, sim_id, day) %>%
+    group_by(BATCH_NUM, STATE_NAME_DIR, SCENARIO_HASH, sim_id) %>%
+    mutate(day = as.numeric(day),
+           across(S:D_L_V_age4, as.numeric)) %>%
+    arrange(BATCH_NUM, STATE_NAME_DIR, SCENARIO_HASH, sim_id, day) %>%
     mutate(
       new_hosp = pmax(H - dplyr::lag(H, default = 0), 0),
       cum_hosp = cumsum(new_hosp)
     ) %>%
     ungroup() %>%
-    group_by(STATE_NAME, SCENARIO, sim_id) %>%
+    group_by(STATE_NAME_DIR, SCENARIO_HASH, sim_id) %>%
     complete(day = full_seq(range(day), 1)) %>%
     fill(H, cum_hosp, new_hosp, .direction = "down") %>%
     replace_na(list(H = 0, cum_hosp = 0, new_hosp = 0)) %>%
     ungroup()
 
   df %>%
-    arrange(STATE_NAME, SCENARIO, sim_id, day) %>%
-    group_by(STATE_NAME, SCENARIO, county_fips, batch_num, sim_id) %>%
+    arrange(STATE_NAME_DIR, SCENARIO_HASH, sim_id, day) %>%
+    group_by(STATE_NAME_DIR, SCENARIO_HASH, county_fips, BATCH_NUM, sim_id) %>%
     pivot_longer(all_of(comp_cols), names_to = "comp", values_to = "val") %>%
     ungroup() %>%
-    group_by(STATE_NAME, SCENARIO, county_fips, batch_num, sim_id, comp) %>%
+    group_by(STATE_NAME_DIR, SCENARIO_HASH, county_fips, BATCH_NUM, sim_id, comp) %>%
     summarise(
       max_value = if (all(is.na(val))) NA_real_ else max(val, na.rm = TRUE),
       max_day   = if (all(is.na(val))) NA_integer_ else day[which.max(replace_na(val, -Inf))],
@@ -226,7 +229,7 @@ summarise_one_node_file = function(path,
     ) %>%
     ungroup() %>%
     pivot_wider(
-      id_cols    = c(STATE_NAME, SCENARIO, county_fips, batch_num, sim_id),
+      id_cols    = c(STATE_NAME_DIR, SCENARIO_HASH, county_fips, BATCH_NUM, sim_id),
       names_from = comp,
       values_from = c(max_value, max_day, min_value, min_day),
       names_glue = "{comp}_{.value}"
