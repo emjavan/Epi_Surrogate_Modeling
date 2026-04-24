@@ -9,7 +9,7 @@ import time
 import csv
 from pathlib import Path
 from secrets import token_bytes
-from numpy.random import SeedSequence, default_rng
+from numpy.random import SeedSequence
 
 from baseclasses.Day import Day
 from baseclasses.InputProperties import InputProperties
@@ -17,6 +17,8 @@ from baseclasses.ModelParameters import ModelParameters
 from baseclasses.Network import Network
 from baseclasses.TravelFlow import TravelFlow
 from baseclasses.Writer import Writer
+
+from utils.ConfigExport import build_executed_config, write_metadata_json
 
 from models.disease.DiseaseModel import DiseaseModel
 from models.travel.TravelModel import TravelModel
@@ -35,7 +37,6 @@ args = parser.parse_args()
 format_str=f'[%(asctime)s] %(filename)s:%(funcName)s:%(lineno)s - %(levelname)s: %(message)s'
 logging.basicConfig(level=args.loglevel, format=format_str)
 logger = logging.getLogger(__name__)
-
 
 def run( simulation_days:Type[Day],
          parameters:Type[ModelParameters],
@@ -111,17 +112,6 @@ def main():
     # Can be pre-generated from template, or generated in GUI
     simulation_properties = InputProperties(args.input_filename)
 
-    # Create output directory
-    output_dir = simulation_properties.output_dir_path
-    os.makedirs(output_dir, exist_ok=True)
-    logger.info(f'Created output directory: {output_dir}')
-
-    # Copy input file to output directory to remember which file generated output
-    input_file_path = os.path.abspath(args.input_filename)
-    copied_input_path = os.path.join(output_dir, 'input.json')
-    shutil.copyfile(input_file_path, copied_input_path)
-    logger.info(f'Copied input file to: {copied_input_path}')
-
     # Also used for exporting day-by-day summary information
     realization_indices = simulation_properties.realization_indices
     realization_number = int(len(realization_indices))
@@ -156,6 +146,7 @@ def main():
     npis.pre_process(network)
 
     # Initialize antiviral model
+    antiviral_model = None # not added to codebase yet
 
     # Initialize vaccine model
     vaccine_parent = Vaccination(parameters)
@@ -175,6 +166,43 @@ def main():
     base_seed = int.from_bytes(token_bytes(16), "little")  # 128-bit
     parent_seedseq = SeedSequence(base_seed)
     child_seedseq = parent_seedseq.spawn(realization_number)
+
+    # Create output directory
+    executed_config = build_executed_config(
+        simulation_properties=simulation_properties,
+        parameters=parameters,
+        disease_model=disease_model,
+        travel_model=travel_model,
+        npi_model=npis,
+        antiviral_model=antiviral_model,
+        vaccine_model=vaccine_model,
+        node_count=network.get_number_of_nodes(),
+        base_seed=base_seed,
+        cli_args=args
+    )
+
+    # Create output directory
+    if simulation_properties.output_dir_path.upper() == "GENERATE":
+        simulation_properties.output_dir_path = executed_config["output_dir_path"]
+    os.makedirs(simulation_properties.output_dir_path, exist_ok=True)
+    logger.info(f'Created output directory: {simulation_properties.output_dir_path}')
+
+    # Copy original input file to output directory with batch-specific name
+    input_file_path = os.path.abspath(args.input_filename)
+    copied_input_path = os.path.join(
+        simulation_properties.output_dir_path,
+        f"input_batch-{simulation_properties.batch_num}.json"
+    )
+    shutil.copyfile(input_file_path, copied_input_path)
+    logger.info(f"Copied input file to: {copied_input_path}")
+
+    # Write canonical input file based on resolved parameters actually used
+    write_metadata_json(
+        executed_config=executed_config,
+        output_dir=simulation_properties.output_dir_path,
+        batch_num=simulation_properties.batch_num,
+        logger=logger
+    )
 
     # Run time output file
     csv_time_path = Path(simulation_properties.output_dir_path) / f"simulation_times_batch-{batch_num}.csv"
@@ -207,12 +235,12 @@ def main():
 
         # Write a time results as soon as sim completes to handle unfinished jobs
         with open(csv_time_path, "a", newline="") as f:
-            fieldnames = ["sim_num", "time_seconds"]
+            fieldnames = ["sim_id", "time_seconds"]
             csv_writer = csv.DictWriter(f, fieldnames=fieldnames)
             # write header if file is empty
             if f.tell() == 0:
                 csv_writer.writeheader()
-            csv_writer.writerow({"sim_num": r, "time_seconds": elapsed})
+            csv_writer.writerow({"sim_id": r, "time_seconds": elapsed})
     return
 
 
