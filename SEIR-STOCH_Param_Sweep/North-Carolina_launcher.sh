@@ -1,8 +1,8 @@
 #!/bin/bash
 
-#SBATCH -J MultiCountySweep              # Job name
-#SBATCH -o MultiCountySweep.%j.o         # Name of stdout output file (%j expands to jobId)
-#SBATCH -e MultiCountySweep.%j.e         # Name of stderr output file (%j expands to jobId)
+#SBATCH -J North-Carolina_MultiCountySweep              # Job name
+#SBATCH -o North-Carolina_MultiCountySweep.%j.o         # Name of stdout output file (%j expands to jobId)
+#SBATCH -e North-Carolina_MultiCountySweep.%j.e         # Name of stderr output file (%j expands to jobId)
 #SBATCH -p normal                        # Queue name
 #SBATCH -N 2                  	         # Total number of nodes requested
 #SBATCH -n 64                            # Total number of tasks, 32 cores per node LS6
@@ -17,8 +17,8 @@ module load launcher
 # Configure launcher
 EXECUTABLE=$TACC_LAUNCHER_DIR/init_launcher
 PRUN=$TACC_LAUNCHER_DIR/paramrun
-CONTROL_FILE=state_commands.txt
-export LAUNCHER_JOB_FILE=state_commands.txt
+CONTROL_FILE=North-Carolina_commands.txt
+export LAUNCHER_JOB_FILE=North-Carolina_commands.txt
 export LAUNCHER_WORKDIR=`pwd`
 export LAUNCHER_SCHED=interleaved
 
