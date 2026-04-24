@@ -1,74 +1,45 @@
 # Epidemic Surrogate Modeling
-TACC PES code used to generate data for training surrogate models.
+TACC [Pandemic Exercise Simulator](https://github.com/TACC/PandemicExerciseSimulator/) code used to generate data for training surrogate models. No interventions were used and each 
 
-Database wire diagrams of proposed PostgreSQL DB to link with a CKAN public data portal (work in progress), so we don't need so many subdirs of input/output data.
+---
 
-```mermaid
-erDiagram
-    direction LR
+## Parameter Sweep Summary
 
-    SCENARIO ||--o{ INGEST_EVENT : has
-    SCENARIO ||--o{ RUN : defines
-    INGEST_EVENT ||--o{ RUN : loads
-    RUN ||--o{ NETWORK_TS_LONG : produces
-    RUN ||--o{ NODE_TS_LONG : produces
-```
+- **States & County Networks**:
+  - **District of Columbia** — 1 county-equivalent (Washington, DC)
+  - **New Jersey** — 21 counties
+  - **North Dakota** — 53 counties
+  - **Wisconsin** — 72 counties
+  - **North Carolina** — 100 counties
+- **Transmission $R_0$**: 0.5 to 5.0 (step size 0.5)
+- **Initial Infected Population**: 1, 10, 100, 1,000 individuals
+- **Simulation Duration**: 500 days per run
+- **Simulations per scenario**: 100
+- **Spatial Structure**: each combination of top 5 most populous counties within each state seeded, except for DC
+**Total Scenarios**: 5,000
+  - 125 county-set configurations × 10 $R_0$ × 4 initial infected values
+  - County sets are generated as unordered combinations
+  - District of Columbia contributes only 1 county set
+  - Each of the other 4 states contribute all non-empty subsets of its top 5 most connected counties:
+    - C(5,1) + C(5,2) + C(5,3) + C(5,4) + C(5,5) = 31 county sets per state
+    - 4 states × 31 = 124 county sets
+  - Total county sets: 124 + 1 = 125
+  - Total scenarios: 125 × 10 × 4 = 5,000
 
+---
 
-```mermaid
-erDiagram
-  SCENARIO ||--o{ INGEST_EVENT : has
-  SCENARIO ||--o{ RUN : defines
-  INGEST_EVENT ||--o{ RUN : loads
-  RUN ||--o{ NETWORK_TS_LONG : produces
-  RUN ||--o{ NODE_TS_LONG : produces
+## Set-up
 
-  SCENARIO {
-    uuid scenario_id PK
-    text scenario_hash "sha256 of identity payload"
-    text state_fips
-    jsonb config_json
-    timestamptz created_at
-  }
+1. Run the sweep script in R to generate:
+   - input_files/
+   - <STATE>_commands.txt
+   - <STATE>_launcher.sh
 
-  INGEST_EVENT {
-    uuid ingest_id PK
-    uuid scenario_id FK
-    text source_dir "unique dir path"
-    timestamptz ingested_at
-    text status
-    text notes
-  }
+2. Submit jobs per state:
+`sbatch Texas_launcher.sh`
 
-  RUN {
-    uuid run_id PK
-    uuid scenario_id FK
-    uuid ingest_id FK
-    int sim_id "stochastic realization id"
-    int batch_num
-    timestamptz started_at
-    timestamptz finished_at
-    text status
-  }
+3. Process metadata & visualize with scripts/scripts.Rproj:
+ - 7a_process_output_to_db.R
+ - 7b_sim_dashboard_app.R
 
-  NETWORK_TS_LONG {
-    uuid run_id FK
-    int t
-    text compartment
-    text risk
-    text vax
-    text age_group
-    double value
-  }
-
-  NODE_TS_LONG {
-    uuid run_id FK
-    text node_id "county fips"
-    int t
-    text compartment
-    text risk
-    text vax
-    text age_group
-    double value
-  }
-```
+The app can be viewed on TACC with TAP:  `https://tap.tacc.utexas.edu/` or if needed moving files to local machine with `scp`.
