@@ -12,10 +12,10 @@ TACC [Pandemic Exercise Simulator](https://github.com/TACC/PandemicExerciseSimul
   - **Wisconsin** — 72 counties
   - **North Carolina** — 100 counties
 - **Transmission $R_0$**: 0.5 to 5.0 (step size 0.5)
-- **Initial Infected Population**: 1, 10, 100, 1,000 individuals
+- **Initial Infected Population**: 1, 10, 100, 1,000 individuals per seeded county
 - **Simulation Duration**: 500 days per run
 - **Simulations per scenario**: 100
-- **Spatial Structure**: each combination of top 5 most populous counties within each state seeded, except for DC
+- **Spatial Structure**: Each combination of top 5 most populous counties within each state seeded, except for DC
 **Total Scenarios**: 5,000
   - 125 county-set configurations × 10 $R_0$ × 4 initial infected values
   - County sets are generated as unordered combinations
