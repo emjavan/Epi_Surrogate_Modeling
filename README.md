@@ -1,5 +1,5 @@
 # Epidemic Surrogate Modeling
-TACC [Pandemic Exercise Simulator](https://github.com/TACC/PandemicExerciseSimulator/) code used to generate data for training surrogate models. No interventions were used and each 
+TACC [Pandemic Exercise Simulator](https://github.com/TACC/PandemicExerciseSimulator/) code used to generate data for training surrogate models. Each state was chosen to represent a range of nodes/counties in the network. Epidemics do not cross state boundaries and are based on a single set of initial exposures leading to influenza-like infections. We chose the simplest model, SEIR, because it's A) less computationally intensive and B) without interventions (e.g. vaccinations and antivirals) we don't need to track the reduction in hospitalizations and deaths.
 
 ---
 
@@ -20,7 +20,7 @@ TACC [Pandemic Exercise Simulator](https://github.com/TACC/PandemicExerciseSimul
   - 125 county-set configurations × 10 $R_0$ × 4 initial infected values
   - County sets are generated as unordered combinations
   - District of Columbia contributes only 1 county set
-  - Each of the other 4 states contribute all non-empty subsets of its top 5 most connected counties:
+  - Each of the other 4 states contribute all non-empty subsets of its top 5 most populous counties:
     - C(5,1) + C(5,2) + C(5,3) + C(5,4) + C(5,5) = 31 county sets per state
     - 4 states × 31 = 124 county sets
   - Total county sets: 124 + 1 = 125
@@ -30,16 +30,17 @@ TACC [Pandemic Exercise Simulator](https://github.com/TACC/PandemicExerciseSimul
 
 ## Set-up
 
-1. Run the sweep script in R to generate:
+1. Open the `scripts.Rproj` or command line to run the sweep script `SEIR_multi-county_sweep.R` in R to generate:
    - input_files/
    - <STATE>_commands.txt
    - <STATE>_launcher.sh
+The files will be added to `SEIR-STOCH_Param_Sweep/`
 
-2. Submit jobs per state:
+2. Submit jobs per state inside `SEIR-STOCH_Param_Sweep/`:
 `sbatch Texas_launcher.sh`
 
-3. Process metadata & visualize with scripts/scripts.Rproj:
+3. Process metadata & visualize with:
  - 7a_process_output_to_db.R
  - 7b_sim_dashboard_app.R
 
-The app can be viewed on TACC with TAP:  `https://tap.tacc.utexas.edu/` or if needed moving files to local machine with `scp`.
+The app can be viewed on TACC with TAP:  `https://tap.tacc.utexas.edu/` or if needed moving files to local machine with `scp` or `rsync`.
