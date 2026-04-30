@@ -6,10 +6,12 @@
 #SBATCH -p normal                        # Queue name
 #SBATCH -N 2                  	         # Total number of nodes requested
 #SBATCH -n 64                            # Total number of tasks, 32 cores per node LS6
-#SBATCH -t 48:00:00            	         # Run time (hh:mm:ss)
+#SBATCH -t 00:10:00            	         # Run time (hh:mm:ss)
 #SBATCH -A TACC-SCI                      # Allocation name
 #SBATCH --mail-user=emjavan@utexas.edu   # Email for notifications
 #SBATCH --mail-type=all                  # Type of notifications, begin, end, fail, all
+
+# DC only has 40 param combos to run with single county, took 4min
 
 # Load launcher
 module load launcher
