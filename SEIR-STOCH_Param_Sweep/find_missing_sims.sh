@@ -1,58 +1,69 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-MANIFEST="state_commands.txt"
+STATES=(
+   "District-of-Columbia"
+   "New-Jersey"
+   "North-Dakota"
+   "Wisconsin"
+   "North-Carolina"
+)
+
 OUT_STATUS="scenario_status.csv"
-OUT_RESUBMIT="resubmit_commands.txt"
 EXPECTED=100
 
-# header
-echo "state,scenario_hash,dir_exists,finished_count,needs_resubmit" > "$OUT_STATUS"
-: > "$OUT_RESUBMIT"
+echo "state,scenario_hash,dir_exists,finished_count,needs_resubmit,source_manifest" > "$OUT_STATUS"
 
-while IFS= read -r line; do
-   # skip blank/comment lines
-   [[ -z "${line// }" ]] && continue
-   [[ "$line" =~ ^# ]] && continue
+for state_name in "${STATES[@]}"; do
+   MANIFEST="${state_name}_commands.txt"
+   OUT_RESUBMIT="${state_name}_resubmit_commands.txt"
 
-   # Extract "State" and "hash" from "... input_files/State_hash.json"
-   # Works with hyphenated states too (e.g., District-of-Columbia)
-   state_hash=$(printf "%s\n" "$line" | sed -n 's/.*input_files\/\([^ ]\+\)\.json.*/\1/p')
-   if [[ -z "$state_hash" ]]; then
-      # If a line doesn't match expected format, skip but leave a breadcrumb
-      echo "WARN: couldn't parse: $line" >&2
+   : > "$OUT_RESUBMIT"
+
+   if [[ ! -f "$MANIFEST" ]]; then
+      echo "WARN: missing manifest: $MANIFEST" >&2
       continue
    fi
 
-   state="${state_hash%_*}"
-   hash="${state_hash#*_}"
-   dir="${state}/${hash}"
+   while IFS= read -r line; do
+      [[ -z "${line// }" ]] && continue
+      [[ "$line" =~ ^# ]] && continue
 
-   dir_exists=0
-   finished=0
+      state_hash=$(printf "%s\n" "$line" | sed -n 's/.*input_files\/\([^ ]\+\)\.json.*/\1/p')
 
-   if [[ -d "$dir" ]]; then
-      dir_exists=1
+      if [[ -z "$state_hash" ]]; then
+         echo "WARN: couldn't parse: $line" >&2
+         continue
+      fi
 
-      # Count finished sims: all non-header lines across all batches
-      # If no files exist, this stays 0.
-      finished=$(
-         find "$dir" -type f -name "simulation_times_batch-*.csv" -print0 2>/dev/null \
-            | xargs -0 -r grep -h -v '^sim_num' 2>/dev/null \
-            | wc -l
-      )
-   fi
+      state="${state_hash%_*}"
+      hash="${state_hash#*_}"
+      dir="${state}/${hash}"
 
-   needs=0
-   if [[ "$dir_exists" -eq 0 || "$finished" -lt "$EXPECTED" ]]; then
-      needs=1
-      echo "$line" >> "$OUT_RESUBMIT"
-   fi
+      dir_exists=0
+      finished=0
 
-   echo "${state},${hash},${dir_exists},${finished},${needs}" >> "$OUT_STATUS"
+      if [[ -d "$dir" ]]; then
+         dir_exists=1
 
-done < "$MANIFEST"
+         finished=$(
+            find "$dir" -type f -name "simulation_times_batch-*.csv" -print0 2>/dev/null \
+               | xargs -0 -r grep -h -v '^sim_num' 2>/dev/null \
+               | wc -l
+         )
+      fi
 
-echo "Wrote:"
-echo "   $OUT_STATUS"
-echo "   $OUT_RESUBMIT"
+      needs=0
+      if [[ "$dir_exists" -eq 0 || "$finished" -lt "$EXPECTED" ]]; then
+         needs=1
+         echo "$line" >> "$OUT_RESUBMIT"
+      fi
+
+      echo "${state},${hash},${dir_exists},${finished},${needs},${MANIFEST}" >> "$OUT_STATUS"
+
+   done < "$MANIFEST"
+
+   echo "Wrote $OUT_RESUBMIT"
+done
+
+echo "Wrote $OUT_STATUS"
