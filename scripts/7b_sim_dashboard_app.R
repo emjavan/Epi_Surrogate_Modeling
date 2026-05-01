@@ -19,7 +19,7 @@ library(bsicons)
 
 # ── Paths (relative to repo root) ────────────────────────────────────────────
 
-REPO_ROOT    <- normalizePath(file.path(here::here(), ".."))
+REPO_ROOT    <- normalizePath(file.path(here::here(), "../SEIR-STOCH_Param_Sweep"))
 MASTER_CSV   <- file.path(REPO_ROOT, "metadata_master.csv")
 PARQUET_ROOT <- file.path(REPO_ROOT, "sim_data")
 

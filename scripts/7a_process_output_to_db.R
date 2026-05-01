@@ -24,7 +24,7 @@ library(tidyverse)
 library(arrow)
 
 #### Configuration #############################################################
-SEARCH_ROOT  <- normalizePath(file.path(here::here(), ".."))
+SEARCH_ROOT  <- normalizePath(file.path(here::here(), "../SEIR-STOCH_Param_Sweep"))
 MASTER_CSV   <- file.path(SEARCH_ROOT, "metadata_master.csv")
 PARQUET_ROOT <- file.path(SEARCH_ROOT, "sim_data")   # partitioned: <hash>/<batch>/
 
