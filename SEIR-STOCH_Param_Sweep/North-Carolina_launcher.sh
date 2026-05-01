@@ -11,6 +11,8 @@
 #SBATCH --mail-user=emjavan@utexas.edu   # Email for notifications
 #SBATCH --mail-type=all                  # Type of notifications, begin, end, fail, all
 
+# Only 195 of 1240 scenarios began, at least 64 complete in 48hrs on 2 nodes, 64 tasks
+
 # Load launcher
 module load launcher
 

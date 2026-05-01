@@ -11,7 +11,7 @@
 #SBATCH --mail-user=emjavan@utexas.edu   # Email for notifications
 #SBATCH --mail-type=all                  # Type of notifications, begin, end, fail, all
 
-# DC only has 40 param combos to run with single county, took 4min
+# DC only has 40 param combos to run with single county, took 4min for all to finish
 
 # Load launcher
 module load launcher
