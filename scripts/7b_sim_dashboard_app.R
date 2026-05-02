@@ -505,12 +505,13 @@ server <- function(input, output, session) {
           TRUE                     ~ "Baseline"
         ),
         initial_infected_total = initial_infected_total(initial_infected_json),
+        completion_pct_display = replace_na(complete_pct, 0),
         created = format(created_at_utc, "%Y-%m-%d %H:%M")
       ) %>%
       select(parquet, geo_region, disease_identity, disease_R0, sim_days,
              initial_infected_total, tag_creator, tag_disease, tag_notes,
-             tag_sim_day_0, interventions, completion, mean_run_time_seconds,
-             created, batch_num, scenario_hash, total_parquet_file_size,
+             tag_sim_day_0, interventions, completion_pct_display, completion,
+             mean_run_time_seconds, created, batch_num, scenario_hash, total_parquet_file_size,
              has_parquet, created_at_utc)
   })
   
@@ -563,28 +564,17 @@ server <- function(input, output, session) {
         dom        = "Bfrti",
         buttons    = list("colvis"),
         columnDefs = list(
-          list(visible = FALSE, targets = c(5, 6, 7, 8, 9, 14, 15)),  # hide optional/detail cols
-          list(className = "dt-center", targets = 0),
-          list(
-            targets = 11,
-            render = JS(
-              "function(data, type, row, meta) {",
-              "  if (type === 'sort' || type === 'type') {",
-              "    var match = String(data).match(/^\\s*([0-9.]+)/);",
-              "    return match ? parseFloat(match[1]) : -1;",
-              "  }",
-              "  return data;",
-              "}"
-            )
-          )
+          list(visible = FALSE, targets = c(5, 6, 7, 8, 9, 15, 16)),  # hide optional/detail cols
+          list(className = "dt-center", targets = 0)
         )
       ),
       colnames = c("File Exists", "Region", "Model", "R0", "Run Day Max",
                    "Initial Infected Total", "Tag Creator", "Tag Disease",
                    "Tag Notes", "Tag Sim Day 0", "Interventions",
-                   "Sim Completion", "Mean Run Time (sec)", "Created",
+                   "Completion %", "Sim Completion", "Mean Run Time (sec)", "Created",
                    "batch_num", "scenario_hash", "Total Parquet Size")
     ) %>%
+      formatRound("completion_pct_display", digits = 0) %>%
       formatRound("mean_run_time_seconds", digits = 2)
   })
 
