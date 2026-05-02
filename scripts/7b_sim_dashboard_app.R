@@ -556,8 +556,11 @@ server <- function(input, output, session) {
       filter     = "top",
       extensions = "Buttons",
       options    = list(
-        pageLength = 25,
-        dom        = "Bfrtip",
+        paging     = FALSE,
+        scrollY    = "60vh",
+        scrollX    = TRUE,
+        scrollCollapse = TRUE,
+        dom        = "Bfrti",
         buttons    = list("colvis"),
         columnDefs = list(
           list(visible = FALSE, targets = c(5, 9, 14, 15)),  # hide optional/detail cols
