@@ -25,6 +25,61 @@ PARQUET_ROOT <- file.path(REPO_ROOT, "sim_data")
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
 
+tag_to_str <- function(x) {
+  if (is.null(x) || length(x) == 0 || all(is.na(unlist(x)))) return(NA_character_)
+  paste(unlist(x), collapse = "|")
+}
+
+load_metadata_tags <- function() {
+  json_files <- list.files(
+    path = REPO_ROOT,
+    pattern = "^metadata_batch-.*\\.json$",
+    recursive = TRUE,
+    full.names = TRUE
+  )
+  
+  if (length(json_files) == 0) {
+    return(tibble(
+      scenario_hash = character(),
+      batch_num = character(),
+      tag_creator = character(),
+      tag_disease = character(),
+      tag_sim_day_0 = character(),
+      tag_notes = character()
+    ))
+  }
+  
+  tag_rows <- purrr::map(json_files, function(path) {
+    tryCatch({
+      m <- jsonlite::read_json(path)
+      tibble(
+        scenario_hash = m$scenario_hash %||% NA_character_,
+        batch_num = m$batch_num %||% NA_character_,
+        tag_creator = tag_to_str(purrr::pluck(m, "metadata_tags", "creator")),
+        tag_disease = tag_to_str(purrr::pluck(m, "metadata_tags", "disease")),
+        tag_sim_day_0 = tag_to_str(purrr::pluck(m, "metadata_tags", "sim_day_0")),
+        tag_notes = tag_to_str(purrr::pluck(m, "metadata_tags", "notes"))
+      )
+    }, error = function(e) NULL)
+  }) %>%
+    purrr::compact() %>%
+    dplyr::bind_rows()
+  
+  if (nrow(tag_rows) == 0) {
+    return(tibble(
+      scenario_hash = character(),
+      batch_num = character(),
+      tag_creator = character(),
+      tag_disease = character(),
+      tag_sim_day_0 = character(),
+      tag_notes = character()
+    ))
+  }
+  
+  tag_rows %>%
+    dplyr::distinct(scenario_hash, batch_num, .keep_all = TRUE)
+}
+
 load_metadata <- function() {
   if (!file.exists(MASTER_CSV)) {
     return(tibble(
@@ -33,10 +88,23 @@ load_metadata <- function() {
       vaccine_used = logical(), antiviral_used = logical(),
       npi_used = logical(), attempt_realization_count = integer(),
       complete_realization_count = integer(), mean_run_time_seconds = double(),
-      created_at_utc = character()
+      created_at_utc = character(), tag_creator = character(),
+      tag_disease = character(), tag_sim_day_0 = character(),
+      tag_notes = character()
     ))
   }
-  read_csv(MASTER_CSV, show_col_types = FALSE) %>%
+  
+  master <- read_csv(MASTER_CSV, show_col_types = FALSE)
+  tag_cols <- c("tag_creator", "tag_disease", "tag_sim_day_0", "tag_notes")
+  
+  if (!all(tag_cols %in% names(master))) {
+    tag_df <- load_metadata_tags()
+    master <- master %>%
+      dplyr::select(-dplyr::any_of(tag_cols)) %>%
+      dplyr::left_join(tag_df, by = c("scenario_hash", "batch_num"))
+  }
+  
+  master %>%
     mutate(
       created_at_utc = as.POSIXct(created_at_utc, tz = "UTC"),
       complete_pct   = round(100 * complete_realization_count /
@@ -81,6 +149,33 @@ parquet_query_scenario <- function(scenario_hash, type = c("network", "nodes")) 
   )
   
   DBI::dbGetQuery(con, query)
+}
+
+initial_infected_total <- function(initial_infected_json) {
+  purrr::map_dbl(initial_infected_json, function(x) {
+    if (is.na(x) || !nzchar(x)) return(NA_real_)
+    
+    initial <- tryCatch(
+      jsonlite::fromJSON(x, simplifyDataFrame = TRUE),
+      error = function(e) NULL
+    )
+    
+    if (is.null(initial) || length(initial) == 0) return(NA_real_)
+    if (is.list(initial) && "initial_infected" %in% names(initial)) {
+      initial <- initial$initial_infected
+    }
+    
+    infected <- if (is.data.frame(initial) && "infected" %in% names(initial)) {
+      initial$infected
+    } else if (is.list(initial) && "infected" %in% names(initial)) {
+      initial$infected
+    } else {
+      NULL
+    }
+    
+    if (is.null(infected)) return(NA_real_)
+    sum(as.numeric(infected), na.rm = TRUE)
+  })
 }
 
 export_batch <- function(batch_num, tmp_dir) {
@@ -283,7 +378,7 @@ server <- function(input, output, session) {
   })
   
   observe({
-    df <- filtered()
+    df <- batch_table_filtered()
     
     preview_df <- df %>%
       dplyr::filter(has_parquet) %>%
@@ -394,6 +489,38 @@ server <- function(input, output, session) {
     df
   })
   
+  batch_table_data <- reactive({
+    filtered() %>%
+      mutate(
+        parquet = if_else(has_parquet, "🟢", "🔴"),
+        completion = sprintf("%d%%  (%d / %d)",
+                             replace_na(complete_pct, 0),
+                             replace_na(complete_realization_count, 0L),
+                             replace_na(attempt_realization_count, 0L)),
+        interventions = case_when(
+          vaccine_used & npi_used  ~ "Vaccine + NPI",
+          vaccine_used             ~ "Vaccine",
+          antiviral_used           ~ "Antiviral",
+          npi_used                 ~ "NPI",
+          TRUE                     ~ "Baseline"
+        ),
+        initial_infected_total = initial_infected_total(initial_infected_json),
+        created = format(created_at_utc, "%Y-%m-%d %H:%M")
+      ) %>%
+      select(parquet, geo_region, disease_identity, disease_R0, sim_days,
+             initial_infected_total, tag_creator, tag_disease, tag_notes,
+             tag_sim_day_0, interventions, completion, mean_run_time_seconds,
+             created, batch_num, scenario_hash, total_parquet_file_size,
+             has_parquet, created_at_utc)
+  })
+  
+  batch_table_filtered <- reactive({
+    df <- batch_table_data()
+    idx <- input$batch_table_rows_all
+    if (is.null(idx)) return(df)
+    df[idx, , drop = FALSE]
+  })
+  
   # Link selected table row to network preview
   observeEvent(input$batch_table_rows_selected, {
     idx <- input$batch_table_rows_selected
@@ -401,7 +528,7 @@ server <- function(input, output, session) {
     # Only sync preview when exactly one row is selected
     if (length(idx) != 1) return()
     
-    selected_hash <- filtered()$scenario_hash[idx]
+    selected_hash <- batch_table_data()$scenario_hash[idx]
     
     updateSelectizeInput(
       session,
@@ -419,25 +546,8 @@ server <- function(input, output, session) {
 
   # Batch table
   output$batch_table <- renderDT({
-    df <- filtered() %>%
-      mutate(
-        parquet = if_else(has_parquet, "🟢", "🔴"),
-        completion = sprintf("%d%%  (%d / %d)",
-                             replace_na(complete_pct, 0),
-                             replace_na(complete_realization_count, 0L),
-                             replace_na(attempt_realization_count, 0L)),
-        interventions = case_when(
-          vaccine_used & npi_used  ~ "Vaccine + NPI",
-          vaccine_used             ~ "Vaccine",
-          antiviral_used           ~ "Antiviral",
-          npi_used                 ~ "NPI",
-          TRUE                     ~ "Baseline"
-        ),
-        created = format(created_at_utc, "%Y-%m-%d %H:%M")
-      ) %>%
-      select(parquet, geo_region, disease_identity, disease_R0, sim_days,
-             interventions, completion, mean_run_time_seconds, created, 
-             batch_num, scenario_hash, total_parquet_file_size)
+    df <- batch_table_data() %>%
+      dplyr::select(-has_parquet, -created_at_utc)
 
     datatable(
       df,
@@ -450,12 +560,14 @@ server <- function(input, output, session) {
         dom        = "Bfrtip",
         buttons    = list("colvis"),
         columnDefs = list(
-          list(visible = FALSE, targets = c(9, 10)),  # hide batch/hash cols
+          list(visible = FALSE, targets = c(5, 9, 14, 15)),  # hide optional/detail cols
           list(className = "dt-center", targets = 0)
         )
       ),
       colnames = c("File Exists", "Region", "Model", "R0", "Run Day Max",
-                   "Interventions", "Sim Completion", "Mean Run Time (sec)", "Created", 
+                   "Initial Infected Total", "Tag Creator", "Tag Disease",
+                   "Tag Notes", "Tag Sim Day 0", "Interventions",
+                   "Sim Completion", "Mean Run Time (sec)", "Created",
                    "batch_num", "scenario_hash", "Total Parquet Size")
     ) %>%
       formatRound("mean_run_time_seconds", digits = 2)
@@ -471,7 +583,7 @@ server <- function(input, output, session) {
   selected_rows <- reactive({
     idx <- input$batch_table_rows_selected
     if (length(idx) == 0) return(character(0))
-    filtered()$batch_num[idx]
+    batch_table_data()$batch_num[idx]
   })
 
   # ── Export metadata CSV ────────────────────────────────────────────────────
@@ -603,7 +715,8 @@ server <- function(input, output, session) {
         sim_days,
         geo_region,
         disease_R0,
-        interventions
+        interventions,
+        initial_infected_json
       )
     
     # get last 4 digits of hash for labeling
@@ -628,6 +741,12 @@ server <- function(input, output, session) {
     
     geo_region <- unique(meta_df$geo_region)[1]
     r0_value   <- unique(meta_df$disease_R0)[1]
+    initial_infected_value <- initial_infected_total(unique(meta_df$initial_infected_json))[1]
+    initial_infected_text <- if (is.na(initial_infected_value)) {
+      "Initial infected=NA"
+    } else {
+      paste0("Initial infected=", format(initial_infected_value, big.mark = ","))
+    }
     
     intervention_text <- meta_df %>%
       dplyr::pull(interventions) %>%
@@ -638,6 +757,7 @@ server <- function(input, output, session) {
     title_text <- paste0(
       geo_region, " | ",
       intervention_text, " | ",
+      initial_infected_text, " | ",
       "R0=", round(r0_value, 2), " | ",
       total_sims, " sims"
     )

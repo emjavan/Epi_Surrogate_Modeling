@@ -49,6 +49,11 @@ vec_to_str <- function(x) {
   paste(unlist(x), collapse = "|")
 }
 
+tag_to_str <- function(x) {
+  if (is.null(x) || length(x) == 0 || all(is.na(unlist(x)))) return(NA_character_)
+  paste(unlist(x), collapse = "|")
+}
+
 to_json_str <- function(x) {
   if (is.null(x) || length(x) == 0) return(NA_character_)
   unclass(jsonlite::toJSON(x, auto_unbox = TRUE, null = "null"))
@@ -75,6 +80,33 @@ get_batch_file_sizes <- function(scenario_hash, batch_num) {
     simulation_times_parquet_bytes = times_bytes,
     total_parquet_bytes            = sum(c(network_bytes, nodes_bytes, times_bytes), na.rm = TRUE)
   )
+}
+
+get_parquet_paths <- function(scenario_hash, batch_num) {
+  batch_dir <- file.path(PARQUET_ROOT, scenario_hash, batch_num)
+  
+  list(
+    network = file.path(batch_dir, "network.parquet"),
+    nodes   = file.path(batch_dir, "nodes.parquet"),
+    times   = file.path(batch_dir, "simulation_times.parquet")
+  )
+}
+
+missing_expected_parquets <- function(metadata_path, scenario_hash, batch_num) {
+  metadata_dir <- dirname(metadata_path)
+  paths <- get_parquet_paths(scenario_hash, batch_num)
+  
+  expected <- c(
+    network = file.exists(file.path(metadata_dir, paste0("network_batch-", batch_num, ".csv"))),
+    nodes = length(list.files(
+      metadata_dir,
+      pattern = paste0("^node_.*_batch-", batch_num, "\\.csv$")
+    )) > 0,
+    times = file.exists(file.path(metadata_dir, paste0("simulation_times_batch-", batch_num, ".csv")))
+  )
+  
+  existing <- vapply(paths, file.exists, logical(1))
+  expected & !existing[names(expected)]
 }
 
 format_bytes <- function(x) {
@@ -139,6 +171,10 @@ parse_metadata <- function(path) {
     scenario_hash              = m$scenario_hash   %||% NA_character_,
     batch_num                  = m$batch_num       %||% NA_character_,
     output_dir_path            = m$output_dir_path %||% NA_character_,
+    tag_creator                = tag_to_str(safe_get(m, "metadata_tags", "creator")),
+    tag_disease                = tag_to_str(safe_get(m, "metadata_tags", "disease")),
+    tag_sim_day_0              = tag_to_str(safe_get(m, "metadata_tags", "sim_day_0")),
+    tag_notes                  = tag_to_str(safe_get(m, "metadata_tags", "notes")),
 
     realization_min            = safe_get(m, "realization_indices", "min")   %||% NA_integer_,
     realization_max            = safe_get(m, "realization_indices", "max")   %||% NA_integer_,
@@ -208,6 +244,13 @@ parse_metadata <- function(path) {
 ingest_network <- function(metadata_dir, scenario_hash, batch_num) {
   csv_path <- file.path(metadata_dir,
                         paste0("network_batch-", batch_num, ".csv"))
+  out_path <- get_parquet_paths(scenario_hash, batch_num)$network
+  
+  if (file.exists(out_path)) {
+    message(sprintf("  [network] exists %s — skipping", out_path))
+    return(invisible(NULL))
+  }
+  
   if (!file.exists(csv_path)) {
     message(sprintf("  [network] no CSV found for batch %s — skipping", batch_num))
     return(invisible(NULL))
@@ -218,9 +261,9 @@ ingest_network <- function(metadata_dir, scenario_hash, batch_num) {
 
   read_csv(csv_path, show_col_types = FALSE) %>%
     mutate(scenario_hash = scenario_hash, batch_num = batch_num) %>%
-    write_parquet(file.path(out_dir, "network.parquet"), compression = "zstd")
+    write_parquet(out_path, compression = "zstd")
 
-  message(sprintf("  [network] wrote %s", file.path(out_dir, "network.parquet")))
+  message(sprintf("  [network] wrote %s", out_path))
 }
 
 # ── Parquet ingest: nodes ─────────────────────────────────────────────────────
@@ -244,6 +287,12 @@ ingest_nodes <- function(metadata_dir, scenario_hash, batch_num) {
 
   out_dir  <- file.path(PARQUET_ROOT, scenario_hash, batch_num)
   out_path <- file.path(out_dir, "nodes.parquet")
+  
+  if (file.exists(out_path)) {
+    message(sprintf("  [nodes]   exists %s — skipping", out_path))
+    return(invisible(NULL))
+  }
+  
   dir.create(out_dir, recursive = TRUE, showWarnings = FALSE)
 
   arrow::open_csv_dataset(node_files) %>%
@@ -271,6 +320,12 @@ ingest_sim_times <- function(metadata_dir, scenario_hash, batch_num) {
   
   out_dir  <- file.path(PARQUET_ROOT, scenario_hash, batch_num)
   out_path <- file.path(out_dir, "simulation_times.parquet")
+  
+  if (file.exists(out_path)) {
+    message(sprintf("  [times]   exists %s — skipping", out_path))
+    return(invisible(NULL))
+  }
+  
   dir.create(out_dir, recursive = TRUE, showWarnings = FALSE)
   
   read_csv(csv_path, show_col_types = FALSE) %>%
@@ -384,6 +439,10 @@ MASTER_COL_TYPES <- cols(
   scenario_hash              = col_character(),
   batch_num                  = col_character(),
   output_dir_path            = col_character(),
+  tag_creator                = col_character(),
+  tag_disease                = col_character(),
+  tag_sim_day_0              = col_character(),
+  tag_notes                  = col_character(),
 
   realization_min            = col_integer(),
   realization_max            = col_integer(),
@@ -446,9 +505,18 @@ MASTER_COL_TYPES <- cols(
 
 #### Load existing master ######################################################
 if (file.exists(MASTER_CSV)) {
-  master <- read_csv(MASTER_CSV, show_col_types = FALSE)
+  master <- read_csv(
+    MASTER_CSV,
+    col_types = MASTER_COL_TYPES,
+    show_col_types = FALSE
+  )
+  for (col in names(MASTER_COL_TYPES$cols)) {
+    if (!col %in% names(master)) {
+      master[[col]] <- NA_character_
+    }
+  }
   
-  if (!"sim_completion" %in% names(master)) {
+  if (!"sim_completion" %in% names(master) || all(is.na(master$sim_completion))) {
     master <- master %>%
       dplyr::mutate(
         sim_completion = calc_sim_completion(
@@ -492,26 +560,120 @@ parsed_rows <- json_files %>%
   compact() %>%
   list_rbind()
 
+if (nrow(parsed_rows) > 0) {
+  parsed_rows <- parsed_rows %>%
+    dplyr::mutate(
+      missing_expected_parquet_names = purrr::pmap_chr(
+        list(file_path, scenario_hash, batch_num),
+        \(file_path, scenario_hash, batch_num) {
+          missing <- missing_expected_parquets(file_path, scenario_hash, batch_num)
+          paste(names(missing)[missing], collapse = ", ")
+        }
+      ),
+      missing_expected_parquet_count = purrr::pmap_int(
+        list(file_path, scenario_hash, batch_num),
+        \(file_path, scenario_hash, batch_num) {
+          sum(missing_expected_parquets(file_path, scenario_hash, batch_num))
+        }
+      )
+    )
+  
+  missing_rows <- parsed_rows %>%
+    dplyr::filter(missing_expected_parquet_count > 0)
+  
+  if (nrow(missing_rows) > 0) {
+    message(sprintf(
+      "Parquet resume check: %d expected Parquet file(s) missing across %d batch(es). Existing Parquets will be skipped.",
+      sum(missing_rows$missing_expected_parquet_count),
+      nrow(missing_rows)
+    ))
+    
+    missing_rows %>%
+      dplyr::slice_head(n = 10) %>%
+      purrr::pwalk(\(...) {
+        row <- tibble::tibble(...)
+        message(sprintf(
+          "  [resume] %s / %s missing: %s",
+          row$scenario_hash,
+          row$batch_num,
+          row$missing_expected_parquet_names
+        ))
+      })
+    
+    if (nrow(missing_rows) > 10) {
+      message(sprintf("  [resume] ...and %d more batch(es) with missing expected Parquets.", nrow(missing_rows) - 10))
+    }
+  } else {
+    message("Parquet resume check: all expected Parquet files are present for parsed metadata.")
+  }
+}
+
 if (nrow(parsed_rows) == 0) {
   new_rows <- parsed_rows
 } else if (is.null(master) || nrow(master) == 0) {
-  new_rows <- parsed_rows
+  new_rows <- parsed_rows %>%
+    dplyr::mutate(process_reason = "not in master")
 } else {
   master_lookup <- master %>%
-    dplyr::select(scenario_hash, batch_num, sim_completion) %>%
-    dplyr::rename(existing_sim_completion = sim_completion)
+    dplyr::select(
+      scenario_hash, batch_num, sim_completion,
+      tag_creator, tag_disease, tag_sim_day_0, tag_notes
+    ) %>%
+    dplyr::rename(
+      existing_sim_completion = sim_completion,
+      existing_tag_creator = tag_creator,
+      existing_tag_disease = tag_disease,
+      existing_tag_sim_day_0 = tag_sim_day_0,
+      existing_tag_notes = tag_notes
+    )
   
   new_rows <- parsed_rows %>%
     dplyr::left_join(master_lookup, by = c("scenario_hash", "batch_num")) %>%
-    dplyr::filter(is.na(existing_sim_completion) | existing_sim_completion < 1) %>%
-    dplyr::select(-existing_sim_completion)
+    dplyr::mutate(
+      metadata_refresh_needed =
+        tidyr::replace_na(tag_creator, "") != tidyr::replace_na(existing_tag_creator, "") |
+        tidyr::replace_na(tag_disease, "") != tidyr::replace_na(existing_tag_disease, "") |
+        tidyr::replace_na(tag_sim_day_0, "") != tidyr::replace_na(existing_tag_sim_day_0, "") |
+        tidyr::replace_na(tag_notes, "") != tidyr::replace_na(existing_tag_notes, ""),
+      process_reason = dplyr::case_when(
+        is.na(existing_sim_completion) ~ "not in master",
+        existing_sim_completion < 1 ~ "incomplete in master",
+        missing_expected_parquet_count > 0 ~ "missing expected Parquet",
+        metadata_refresh_needed ~ "metadata refresh",
+        TRUE ~ "already complete"
+      )
+    ) %>%
+    dplyr::filter(
+      is.na(existing_sim_completion) |
+        existing_sim_completion < 1 |
+        missing_expected_parquet_count > 0 |
+        metadata_refresh_needed
+    ) %>%
+    dplyr::select(
+      -existing_sim_completion,
+      -existing_tag_creator,
+      -existing_tag_disease,
+      -existing_tag_sim_day_0,
+      -existing_tag_notes
+    )
 }
 
 n_skipped <- nrow(parsed_rows) - nrow(new_rows)
 message(sprintf(
-  "%d row(s) to process (skipping %d already complete in master).",
+  "%d metadata row(s) selected for refresh/resume (skipping %d already current in master with expected Parquets present).",
   nrow(new_rows), n_skipped
 ))
+
+if (nrow(new_rows) > 0 && "process_reason" %in% names(new_rows)) {
+  reason_counts <- new_rows %>%
+    dplyr::count(process_reason, name = "n")
+  
+  reason_counts %>%
+    purrr::pwalk(\(...) {
+      row <- tibble::tibble(...)
+      message(sprintf("  [select] %d row(s): %s", row$n, row$process_reason))
+    })
+}
 
 #### Ingest new rows ###########################################################
 if (nrow(new_rows) > 0) {
@@ -535,13 +697,36 @@ if (nrow(new_rows) > 0) {
     bn   <- row$batch_num
 
     message(sprintf("\nIngesting %s / %s", hash, bn))
+    if ("process_reason" %in% names(row)) {
+      message(sprintf("  [select] reason: %s", row$process_reason))
+    }
+    if ("missing_expected_parquet_names" %in% names(row) &&
+        !is.na(row$missing_expected_parquet_names) &&
+        nzchar(row$missing_expected_parquet_names)) {
+      message(sprintf("  [resume] missing before ingest: %s", row$missing_expected_parquet_names))
+    }
+    
+    metadata_only <- "process_reason" %in% names(row) &&
+      identical(row$process_reason, "metadata refresh") &&
+      "missing_expected_parquet_count" %in% names(row) &&
+      identical(row$missing_expected_parquet_count, 0L)
     
     #### Run ingest iuns #######################################################
-    ingest_network(mdir, hash, bn)
-    ingest_nodes(mdir, hash, bn)
-    ingest_sim_times(mdir, hash, bn)
+    if (metadata_only) {
+      message("  [metadata] refreshing metadata_master row only; Parquet conversion skipped")
+    } else {
+      ingest_network(mdir, hash, bn)
+      ingest_nodes(mdir, hash, bn)
+      ingest_sim_times(mdir, hash, bn)
+    }
     
     sizes <- get_batch_file_sizes(hash, bn)
+    missing_after <- missing_expected_parquets(row$file_path, hash, bn)
+    if (any(missing_after)) {
+      message(sprintf("  [resume] still missing after ingest: %s", paste(names(missing_after)[missing_after], collapse = ", ")))
+    } else {
+      message("  [resume] all expected Parquets present after ingest")
+    }
     
     new_rows[i, c(
       "network_parquet_bytes",
@@ -563,6 +748,16 @@ if (nrow(new_rows) > 0) {
       message("  [mongo]   upserted")
     }
   })
+
+  helper_cols <- intersect(
+    c("missing_expected_parquet_names", "missing_expected_parquet_count",
+      "metadata_refresh_needed", "process_reason"),
+    names(new_rows)
+  )
+  if (length(helper_cols) > 0) {
+    new_rows <- new_rows %>%
+      dplyr::select(-dplyr::all_of(helper_cols))
+  }
 
   #### Write metadata CSV ######################################################
   if (is.null(master) || nrow(master) == 0) {
