@@ -16,7 +16,7 @@ module load launcher
 
 # Configure launcher
 EXECUTABLE=$TACC_LAUNCHER_DIR/init_launcher
-RUN=$TACC_LAUNCHER_DIR/paramrun
+PRUN=$TACC_LAUNCHER_DIR/paramrun
 CONTROL_FILE=New-Jersey_resubmit_commands.txt
 export LAUNCHER_JOB_FILE=New-Jersey_resubmit_commands.txt
 export LAUNCHER_WORKDIR=`pwd`
