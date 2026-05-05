@@ -28,7 +28,16 @@ rows = defaultdict(lambda: {
     "finished": 0,
 })
 
+counted_dirs = set()
+
 for meta_path in Path(".").rglob("metadata_batch-*.json"):
+    scenario_dir = meta_path.parent.resolve()
+
+    # Avoid double-counting the same scenario dir when it contains multiple metadata files
+    if scenario_dir in counted_dirs:
+        continue
+    counted_dirs.add(scenario_dir)
+
     try:
         with open(meta_path, "r") as f:
             meta = json.load(f)
@@ -40,22 +49,26 @@ for meta_path in Path(".").rglob("metadata_batch-*.json"):
         continue
 
     input_key = Path(cli_input).name
-
-    batch = meta.get("batch_num", "")
     scenario_hash = meta.get("scenario_hash", "")
     output_dir = meta.get("output_dir_path", str(meta_path.parent))
 
-    sim_file = meta_path.parent / f"simulation_times_batch-{batch}.csv"
-
     finished = 0
-    if sim_file.exists():
+    batches = set()
+
+    for sim_file in scenario_dir.glob("simulation_times_batch-*.csv"):
+        batch = sim_file.name.removeprefix("simulation_times_batch-").removesuffix(".csv")
+        batches.add(batch)
+
         with open(sim_file, newline="") as f:
             reader = csv.DictReader(f)
-            finished = sum(1 for row in reader if row.get("sim_id") not in ("", None))
+            finished += sum(
+                1 for row in reader
+                if row.get("sim_id") not in ("", None)
+            )
 
     rows[input_key]["hashes"].add(scenario_hash)
     rows[input_key]["dirs"].add(output_dir)
-    rows[input_key]["batches"].add(batch)
+    rows[input_key]["batches"].update(batches)
     rows[input_key]["finished"] += finished
 
 print("input_key\tscenario_hash\toutput_dir\tbatch_num\tfinished_count")
